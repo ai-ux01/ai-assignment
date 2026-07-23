@@ -1,0 +1,110 @@
+# ==============================================================================
+# Docker Ignore File for Production Builds
+# ==============================================================================
+# Excludes files that shouldn't be in the Docker image to reduce size and
+# improve build performance
+# ==============================================================================
+
+# Dependencies (will be installed in container)
+node_modules
+npm-debug.log
+package-lock.json
+
+# Build outputs (will be built in container)
+dist
+build
+*.tsbuildinfo
+
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Environment files (use Docker secrets instead)
+.env
+.env.*
+!.env.example
+
+# Documentation (not needed in runtime)
+*.md
+!README.md
+docs/
+
+# Testing
+coverage
+.nyc_output
+test-results
+*.test.ts
+*.spec.ts
+*.test.js
+*.spec.js
+__tests__
+__mocks__
+
+# Linting and formatting
+.eslintrc.json
+.eslintignore
+.prettierrc.json
+.prettierignore
+.editorconfig
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test configuration
+jest.config.js
+jest.config.ts
+
+# Docker files (not needed inside container)
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Development tools
+.kiro
+ai-prompts
+tool-specific
+examples
+scripts/*.sh
+!scripts/validate-env.js
+
+# Database seed data (use migrations instead)
+database/seed-data
+database/*.md
+!database/schema-or-migrations
+
+# Logs and data directories
+logs
+*.log
+data
+backups
+
+# Temporary files
+tmp
+temp
+*.tmp
+
+# Frontend (if separate)
+frontend
+
+# Other
+.cache
+.parcel-cache
+public
+
+# OS files
+Thumbs.DS
+*.pid
+*.seed
+*.pid.lock

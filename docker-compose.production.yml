@@ -1,0 +1,262 @@
+# ==============================================================================
+# Production Docker Compose Configuration
+# ==============================================================================
+# This docker-compose file is optimized for production deployment with:
+# - Separate volumes for data persistence and backups
+# - Health checks for all services
+# - Resource limits and restart policies
+# - Logging configuration with rotation
+# - Network isolation
+# ==============================================================================
+
+version: '3.8'
+
+services:
+  # ==============================================================================
+  # PostgreSQL Database Service
+  # ==============================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: support-ticket-db-prod
+    restart: always
+    
+    environment:
+      # Database credentials (use secrets in production)
+      POSTGRES_USER: ${DB_USER:-ticketuser_prod}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-CHANGE_IN_PRODUCTION}
+      POSTGRES_DB: ${DB_NAME:-support_tickets_prod}
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=en_US.utf8"
+      
+      # Performance tuning
+      POSTGRES_SHARED_BUFFERS: ${DB_SHARED_BUFFERS:-256MB}
+      POSTGRES_EFFECTIVE_CACHE_SIZE: ${DB_EFFECTIVE_CACHE_SIZE:-1GB}
+      POSTGRES_MAX_CONNECTIONS: ${DB_MAX_CONNECTIONS:-100}
+    
+    ports:
+      # Only expose if external access needed (comment out for internal only)
+      - "${DB_PORT:-5432}:5432"
+    
+    volumes:
+      # Persistent data storage
+      - postgres_data_prod:/var/lib/postgresql/data
+      
+      # Database backups
+      - postgres_backups:/backups
+      
+      # Database initialization scripts
+      - ./database/schema-or-migrations:/docker-entrypoint-initdb.d:ro
+      
+      # Custom PostgreSQL configuration
+      - ./database/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ticketuser_prod} -d ${DB_NAME:-support_tickets_prod}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
+        compress: "true"
+    
+    networks:
+      - support-ticket-network
+  
+  # ==============================================================================
+  # Backend API Service
+  # ==============================================================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+      args:
+        NODE_VERSION: 18
+        BUILD_DATE: ${BUILD_DATE:-}
+        VCS_REF: ${VCS_REF:-}
+    
+    image: support-ticket-api:${VERSION:-latest}
+    container_name: support-ticket-api-prod
+    restart: always
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+    
+    environment:
+      # Application environment
+      NODE_ENV: production
+      PORT: 3000
+      
+      # Database configuration
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-ticketuser_prod}
+      DB_PASSWORD: ${DB_PASSWORD:-CHANGE_IN_PRODUCTION}
+      DB_NAME: ${DB_NAME:-support_tickets_prod}
+      DB_MAX_CONNECTIONS: ${DB_MAX_CONNECTIONS:-50}
+      DB_IDLE_TIMEOUT: ${DB_IDLE_TIMEOUT:-30000}
+      DB_CONNECTION_TIMEOUT: ${DB_CONNECTION_TIMEOUT:-10000}
+      
+      # Logging configuration
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FILE_PATH: /app/logs/production.log
+      LOG_MAX_FILE_SIZE: 100m
+      LOG_MAX_FILES: 30
+      
+      # Security configuration
+      JWT_SECRET: ${JWT_SECRET:-CHANGE_IN_PRODUCTION}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-8h}
+      
+      # CORS configuration
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://support-ticket.example.com}
+      
+      # Rate limiting
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-900000}
+      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-100}
+      
+      # Application limits
+      MAX_TITLE_LENGTH: 200
+      MAX_DESCRIPTION_LENGTH: 5000
+      MAX_COMMENT_LENGTH: 2000
+      MAX_SEARCH_QUERY_LENGTH: 200
+      
+      # Production features
+      ENABLE_ERROR_STACK: false
+      ENABLE_REQUEST_LOGGING: false
+      ENABLE_METRICS: true
+      METRICS_PORT: 9090
+      HEALTH_CHECK_ENABLED: true
+      HEALTH_CHECK_PATH: /health
+    
+    ports:
+      # Application port
+      - "${API_PORT:-3000}:3000"
+      
+      # Metrics port (for Prometheus)
+      - "${METRICS_PORT:-9090}:9090"
+    
+    volumes:
+      # Application logs
+      - api_logs:/app/logs
+      
+      # Mount custom configuration if needed
+      # - ./config/production.json:/app/config/production.json:ro
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "10"
+        compress: "true"
+    
+    networks:
+      - support-ticket-network
+  
+  # ==============================================================================
+  # Database Backup Service (Optional)
+  # ==============================================================================
+  db-backup:
+    image: postgres:15-alpine
+    container_name: support-ticket-db-backup
+    restart: "no"
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+    
+    environment:
+      POSTGRES_USER: ${DB_USER:-ticketuser_prod}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-CHANGE_IN_PRODUCTION}
+      POSTGRES_DB: ${DB_NAME:-support_tickets_prod}
+      PGHOST: postgres
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+    
+    volumes:
+      - postgres_backups:/backups
+      - ./scripts/backup-database.sh:/backup-database.sh:ro
+    
+    # Run backup script
+    entrypoint: ["/bin/sh", "/backup-database.sh"]
+    
+    networks:
+      - support-ticket-network
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+# ==============================================================================
+# Volumes
+# ==============================================================================
+volumes:
+  # PostgreSQL data persistence
+  postgres_data_prod:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${DATA_PATH:-./data/postgres}
+      o: bind
+  
+  # PostgreSQL backups
+  postgres_backups:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${BACKUP_PATH:-./data/backups}
+      o: bind
+  
+  # Application logs
+  api_logs:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${LOG_PATH:-./data/logs}
+      o: bind
+
+# ==============================================================================
+# Networks
+# ==============================================================================
+networks:
+  support-ticket-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

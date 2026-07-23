@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support Ticket Management System</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎫 Support Ticket Management</h1>
+            <div class="stats" id="stats">
+                <div class="stat-card">
+                    <span class="stat-label">Total Tickets</span>
+                    <span class="stat-value" id="totalTickets">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Open</span>
+                    <span class="stat-value open" id="openTickets">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">In Progress</span>
+                    <span class="stat-value in-progress" id="inProgressTickets">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Resolved</span>
+                    <span class="stat-value resolved" id="resolvedTickets">0</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <aside class="sidebar">
+                <button class="btn btn-primary btn-block" onclick="showCreateForm()">
+                    ➕ Create New Ticket
+                </button>
+                
+                <div class="filters">
+                    <h3>Filters</h3>
+                    <div class="filter-group">
+                        <label>Status</label>
+                        <select id="statusFilter" onchange="applyFilters()">
+                            <option value="">All Statuses</option>
+                            <option value="open">Open</option>
+                            <option value="in_progress">In Progress</option>
+                            <option value="resolved">Resolved</option>
+                            <option value="closed">Closed</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>Priority</label>
+                        <select id="priorityFilter" onchange="applyFilters()">
+                            <option value="">All Priorities</option>
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
+                            <option value="critical">Critical</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>Search</label>
+                        <input type="text" id="searchInput" placeholder="Search tickets..." onkeyup="handleSearch()">
+                    </div>
+                </div>
+            </aside>
+
+            <main class="content">
+                <div id="ticketsList" class="tickets-list"></div>
+                <div id="ticketDetail" class="ticket-detail" style="display: none;"></div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Create/Edit Ticket Modal -->
+    <div id="ticketModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h2 id="modalTitle">Create New Ticket</h2>
+            <form id="ticketForm" onsubmit="submitTicket(event)">
+                <div class="form-group">
+                    <label for="title">Title *</label>
+                    <input type="text" id="title" required maxlength="200">
+                </div>
+                
+                <div class="form-group">
+                    <label for="description">Description *</label>
+                    <textarea id="description" rows="5" required maxlength="5000"></textarea>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="priority">Priority *</label>
+                        <select id="priority" required>
+                            <option value="low">Low</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="high">High</option>
+                            <option value="critical">Critical</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="category">Category</label>
+                        <input type="text" id="category" maxlength="50">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="reportedBy">Reported By *</label>
+                    <input type="text" id="reportedBy" required maxlength="100">
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Ticket</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

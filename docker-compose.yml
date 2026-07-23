@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: support-ticket-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-ticketuser}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-ticketpass}
+      POSTGRES_DB: ${DB_NAME:-support_tickets}
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema-or-migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ticketuser}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - support-ticket-network
+
+  # Backend API Service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: support-ticket-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${PORT:-3000}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-ticketuser}
+      DB_PASSWORD: ${DB_PASSWORD:-ticketpass}
+      DB_NAME: ${DB_NAME:-support_tickets}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      - ./src:/app/src
+      - /app/node_modules
+    networks:
+      - support-ticket-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  support-ticket-network:
+    driver: bridge

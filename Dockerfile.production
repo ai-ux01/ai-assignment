@@ -1,0 +1,118 @@
+# ==============================================================================
+# Multi-Stage Production Dockerfile for Support Ticket Management System
+# ==============================================================================
+# This Dockerfile creates an optimized production image with:
+# - Multi-stage build to minimize final image size
+# - Security hardening with non-root user
+# - Health checks for container orchestration
+# - Optimized layer caching for faster rebuilds
+# ==============================================================================
+
+# ==============================================================================
+# Stage 1: Dependencies
+# ==============================================================================
+# Install all dependencies (both dev and production) for building
+FROM node:18-alpine AS dependencies
+
+WORKDIR /app
+
+# Copy package files for dependency installation
+COPY package*.json ./
+
+# Install all dependencies (needed for build)
+# Use npm ci for reproducible builds
+RUN npm ci --ignore-scripts
+
+# ==============================================================================
+# Stage 2: Builder
+# ==============================================================================
+# Build the TypeScript application
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+
+# Copy dependencies from previous stage
+COPY --from=dependencies /app/node_modules ./node_modules
+
+# Copy source code and configuration
+COPY package*.json ./
+COPY tsconfig.json ./
+COPY src ./src
+
+# Build the application
+RUN npm run build
+
+# Remove development dependencies
+RUN npm prune --production
+
+# ==============================================================================
+# Stage 3: Production
+# ==============================================================================
+# Create minimal production image
+FROM node:18-alpine AS production
+
+# Set NODE_ENV to production
+ENV NODE_ENV=production
+
+# Install dumb-init for proper signal handling
+RUN apk add --no-cache dumb-init
+
+# Create app directory
+WORKDIR /app
+
+# Create non-root user and group
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001 -G nodejs
+
+# Create necessary directories
+RUN mkdir -p /app/logs && \
+    chown -R nodejs:nodejs /app
+
+# Copy production dependencies from builder
+COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
+
+# Copy built application from builder
+COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
+
+# Copy package.json for metadata
+COPY --chown=nodejs:nodejs package*.json ./
+
+# Copy database migrations (needed for production deployments)
+COPY --chown=nodejs:nodejs database/schema-or-migrations ./database/schema-or-migrations
+
+# Switch to non-root user
+USER nodejs
+
+# Expose application port
+EXPOSE 3000
+
+# Health check configuration
+# Checks if the application responds to health endpoint
+HEALTHCHECK --interval=30s \
+            --timeout=5s \
+            --start-period=10s \
+            --retries=3 \
+    CMD node -e "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})" || exit 1
+
+# Use dumb-init to handle signals properly
+ENTRYPOINT ["dumb-init", "--"]
+
+# Start the application
+CMD ["node", "dist/index.js"]
+
+# ==============================================================================
+# Build Arguments (optional, for build-time customization)
+# ==============================================================================
+# Build with: docker build --build-arg NODE_VERSION=18 -f Dockerfile.production -t support-ticket:latest .
+ARG NODE_VERSION=18
+ARG BUILD_DATE
+ARG VCS_REF
+
+# Labels for image metadata
+LABEL org.opencontainers.image.title="Support Ticket Management System" \
+      org.opencontainers.image.description="Production-ready support ticket management API" \
+      org.opencontainers.image.version="1.0.0" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.vendor="Support Ticket Team" \
+      maintainer="support-ticket-team"

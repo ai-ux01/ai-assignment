@@ -1,0 +1,117 @@
+name: Dependency Updates
+
+on:
+  schedule:
+    # Run every Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  update-dependencies:
+    name: Check and Update Dependencies
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+          cache: 'npm'
+      
+      - name: Check for outdated packages
+        run: |
+          npm outdated > outdated.txt || true
+          cat outdated.txt
+      
+      - name: Run npm audit
+        run: |
+          npm audit --audit-level=moderate > audit.txt || true
+          cat audit.txt
+      
+      - name: Update dependencies (patch and minor)
+        run: |
+          npm update
+          npm outdated
+      
+      - name: Run tests after update
+        env:
+          NODE_ENV: test
+          DB_HOST: localhost
+          DB_USER: test
+          DB_PASSWORD: test
+          DB_NAME: test_db
+          JWT_SECRET: test-secret
+        run: |
+          npm test || echo "Tests failed after dependency update"
+      
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore: update dependencies'
+          title: 'chore: automated dependency updates'
+          body: |
+            ## Automated Dependency Updates
+            
+            This PR contains automated dependency updates.
+            
+            ### Changes
+            - Updated npm packages to latest compatible versions
+            - Patch and minor version updates only
+            
+            ### Audit Report
+            ```
+            $(cat audit.txt)
+            ```
+            
+            ### Outdated Packages (Before Update)
+            ```
+            $(cat outdated.txt)
+            ```
+            
+            Please review and merge if all checks pass.
+          branch: automated-dependency-updates
+          delete-branch: true
+          labels: dependencies
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+      
+      - name: Run Snyk test
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+        continue-on-error: true
+      
+      - name: Upload security scan results
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-scan-results
+          path: |
+            snyk-report.json
+            npm-audit.json

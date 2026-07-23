@@ -1,0 +1,807 @@
+openapi: 3.0.3
+info:
+  title: Support Ticket Management System API
+  description: |
+    RESTful API for managing support tickets with lifecycle management, assignment, commenting, and search capabilities.
+    
+    ## Features
+    - Ticket lifecycle management with enforced state machine transitions
+    - Assignment and reassignment of tickets to team members
+    - Collaborative commenting for team communication
+    - Keyword search across ticket title and description
+    - Status-based filtering
+    - Comprehensive audit logging
+    
+    ## Authentication
+    Most write operations require JWT-based authentication using Bearer tokens.
+    Include the token in the Authorization header: `Authorization: Bearer <token>`
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Development server
+  - url: https://api.example.com/api/v1
+    description: Production server
+
+tags:
+  - name: Tickets
+    description: Ticket management operations
+  - name: Comments
+    description: Comment operations on tickets
+  - name: Search
+    description: Search and filter operations
+
+security:
+  - bearerAuth: []
+
+paths:
+  /tickets:
+    post:
+      tags:
+        - Tickets
+      summary: Create a new ticket
+      description: Create a new support ticket with initial state set to Open
+      operationId: createTicket
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTicketRequest'
+            examples:
+              highPriority:
+                summary: High priority ticket
+                value:
+                  title: Login page not loading
+                  description: Users are unable to access the login page. Error 500 is displayed.
+                  priority: High
+              critical:
+                summary: Critical issue
+                value:
+                  title: Database connection failure
+                  description: All users experiencing connection timeouts
+                  priority: Critical
+      responses:
+        '201':
+          description: Ticket created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ticket'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    get:
+      tags:
+        - Tickets
+      summary: List all tickets
+      description: Retrieve all tickets with their core fields in consistent order
+      operationId: listTickets
+      security: []
+      responses:
+        '200':
+          description: List of tickets retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketListResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /tickets/{id}:
+    get:
+      tags:
+        - Tickets
+      summary: Get ticket details
+      description: Retrieve complete details of a specific ticket including all associated comments
+      operationId: getTicket
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      responses:
+        '200':
+          description: Ticket details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketWithComments'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    patch:
+      tags:
+        - Tickets
+      summary: Update ticket information
+      description: Update ticket title, description, or priority. State and assignee cannot be updated through this endpoint.
+      operationId: updateTicket
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTicketRequest'
+            examples:
+              updateTitle:
+                summary: Update title only
+                value:
+                  title: Login page returning 500 error
+              updatePriority:
+                summary: Escalate priority
+                value:
+                  priority: Critical
+              updateMultiple:
+                summary: Update multiple fields
+                value:
+                  title: Login page returning 500 error
+                  description: Users are unable to access the login page. Error 500 is displayed. Affects all users.
+                  priority: Critical
+      responses:
+        '200':
+          description: Ticket updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ticket'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /tickets/{id}/assignee:
+    patch:
+      tags:
+        - Tickets
+      summary: Assign ticket to team member
+      description: Assign a ticket to a team member, reassign to a different member, or unassign
+      operationId: assignTicket
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignTicketRequest'
+            examples:
+              assign:
+                summary: Assign to team member
+                value:
+                  assignee: john.doe@example.com
+              unassign:
+                summary: Unassign ticket
+                value:
+                  assignee: null
+      responses:
+        '200':
+          description: Ticket assigned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ticket'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /tickets/{id}/state:
+    patch:
+      tags:
+        - Tickets
+      summary: Transition ticket state
+      description: |
+        Change the ticket state following defined state machine rules.
+        
+        Valid transitions:
+        - Open → In_Progress
+        - Open → Cancelled
+        - In_Progress → Resolved
+        - In_Progress → Cancelled
+        - Resolved → Closed
+        
+        Terminal states (Closed, Cancelled) cannot be transitioned further.
+      operationId: transitionState
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransitionStateRequest'
+            examples:
+              startWork:
+                summary: Start working on ticket
+                value:
+                  state: In_Progress
+              resolve:
+                summary: Mark as resolved
+                value:
+                  state: Resolved
+              close:
+                summary: Close ticket
+                value:
+                  state: Closed
+      responses:
+        '200':
+          description: State transition successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ticket'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /tickets/{id}/comments:
+    post:
+      tags:
+        - Comments
+      summary: Add comment to ticket
+      description: Add a comment to a ticket for team communication. Comments are immutable once created.
+      operationId: addComment
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCommentRequest'
+            examples:
+              investigation:
+                summary: Investigation update
+                value:
+                  text: Investigating the server logs to identify the root cause
+                  author: john.doe@example.com
+              solution:
+                summary: Solution description
+                value:
+                  text: Increased connection pool size from 10 to 50. Monitoring results.
+                  author: sarah.jones@example.com
+      responses:
+        '201':
+          description: Comment created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /tickets/search:
+    get:
+      tags:
+        - Search
+      summary: Search tickets by keyword
+      description: Search for tickets by keyword across title and description fields. Search is case-insensitive and supports partial matching.
+      operationId: searchTickets
+      security: []
+      parameters:
+        - name: q
+          in: query
+          description: Search keyword
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            example: login
+      responses:
+        '200':
+          description: Search results retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /tickets/filter:
+    get:
+      tags:
+        - Search
+      summary: Filter tickets by status
+      description: Filter tickets by their current state. Only single-state filtering is supported.
+      operationId: filterTickets
+      security: []
+      parameters:
+        - name: state
+          in: query
+          description: State to filter by
+          required: true
+          schema:
+            $ref: '#/components/schemas/TicketState'
+      responses:
+        '200':
+          description: Filtered tickets retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FilterResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT authentication token
+
+  parameters:
+    TicketId:
+      name: id
+      in: path
+      description: Ticket UUID
+      required: true
+      schema:
+        type: string
+        format: uuid
+        example: 550e8400-e29b-41d4-a716-446655440000
+
+  schemas:
+    Priority:
+      type: string
+      enum:
+        - Low
+        - Medium
+        - High
+        - Critical
+      description: Ticket priority level
+      example: High
+
+    TicketState:
+      type: string
+      enum:
+        - Open
+        - In_Progress
+        - Resolved
+        - Closed
+        - Cancelled
+      description: Current state of the ticket
+      example: Open
+
+    Ticket:
+      type: object
+      required:
+        - id
+        - title
+        - description
+        - priority
+        - state
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique ticket identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Ticket title
+          example: Login page not loading
+        description:
+          type: string
+          minLength: 1
+          maxLength: 5000
+          description: Detailed ticket description
+          example: Users are unable to access the login page. Error 500 is displayed.
+        priority:
+          $ref: '#/components/schemas/Priority'
+        state:
+          $ref: '#/components/schemas/TicketState'
+        assignee:
+          type: string
+          nullable: true
+          description: User identifier of assigned team member
+          example: john.doe@example.com
+        createdAt:
+          type: string
+          format: date-time
+          description: Ticket creation timestamp
+          example: '2024-01-15T10:30:00Z'
+        updatedAt:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: '2024-01-15T11:00:00Z'
+
+    TicketWithComments:
+      allOf:
+        - $ref: '#/components/schemas/Ticket'
+        - type: object
+          required:
+            - comments
+          properties:
+            comments:
+              type: array
+              items:
+                $ref: '#/components/schemas/Comment'
+              description: List of comments in chronological order
+
+    Comment:
+      type: object
+      required:
+        - id
+        - ticketId
+        - text
+        - author
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique comment identifier
+          example: 770e8400-e29b-41d4-a716-446655440222
+        ticketId:
+          type: string
+          format: uuid
+          description: Parent ticket identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        text:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: Comment text
+          example: Investigating the server logs to identify the root cause
+        author:
+          type: string
+          description: User identifier of comment author
+          example: john.doe@example.com
+        createdAt:
+          type: string
+          format: date-time
+          description: Comment creation timestamp
+          example: '2024-01-15T10:45:00Z'
+
+    CreateTicketRequest:
+      type: object
+      required:
+        - title
+        - description
+        - priority
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Ticket title
+          example: Login page not loading
+        description:
+          type: string
+          minLength: 1
+          maxLength: 5000
+          description: Detailed ticket description
+          example: Users are unable to access the login page. Error 500 is displayed.
+        priority:
+          $ref: '#/components/schemas/Priority'
+
+    UpdateTicketRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Updated ticket title
+          example: Login page returning 500 error
+        description:
+          type: string
+          minLength: 1
+          maxLength: 5000
+          description: Updated ticket description
+          example: Users are unable to access the login page. Error 500 is displayed. Affects all users.
+        priority:
+          $ref: '#/components/schemas/Priority'
+      minProperties: 1
+
+    AssignTicketRequest:
+      type: object
+      required:
+        - assignee
+      properties:
+        assignee:
+          type: string
+          nullable: true
+          description: User identifier to assign ticket to, or null to unassign
+          example: john.doe@example.com
+
+    TransitionStateRequest:
+      type: object
+      required:
+        - state
+      properties:
+        state:
+          $ref: '#/components/schemas/TicketState'
+
+    CreateCommentRequest:
+      type: object
+      required:
+        - text
+        - author
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: Comment text
+          example: Investigating the server logs to identify the root cause
+        author:
+          type: string
+          description: User identifier of comment author
+          example: john.doe@example.com
+
+    TicketListResponse:
+      type: object
+      required:
+        - tickets
+        - count
+      properties:
+        tickets:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ticket'
+        count:
+          type: integer
+          description: Total number of tickets
+          example: 2
+
+    SearchResponse:
+      type: object
+      required:
+        - tickets
+        - count
+        - query
+      properties:
+        tickets:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ticket'
+        count:
+          type: integer
+          description: Number of tickets matching search
+          example: 1
+        query:
+          type: string
+          description: Search query that was executed
+          example: login
+
+    FilterResponse:
+      type: object
+      required:
+        - tickets
+        - count
+        - filter
+      properties:
+        tickets:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ticket'
+        count:
+          type: integer
+          description: Number of tickets in filtered state
+          example: 2
+        filter:
+          type: string
+          description: State that was filtered by
+          example: Open
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+            - timestamp
+            - requestId
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: INVALID_INPUT
+            message:
+              type: string
+              description: Human-readable error message
+              example: Validation failed for ticket creation request
+            details:
+              type: array
+              items:
+                $ref: '#/components/schemas/ValidationError'
+              description: Field-specific validation errors
+            timestamp:
+              type: string
+              format: date-time
+              description: Error occurrence timestamp
+              example: '2024-01-15T10:30:00Z'
+            requestId:
+              type: string
+              description: Unique request identifier for tracing
+              example: req_abc123
+
+    ValidationError:
+      type: object
+      required:
+        - field
+        - message
+        - code
+      properties:
+        field:
+          type: string
+          description: Field that failed validation
+          example: title
+        message:
+          type: string
+          description: Validation error message
+          example: Title is required and cannot be empty
+        code:
+          type: string
+          description: Machine-readable error code
+          example: MISSING_REQUIRED_FIELD
+
+  responses:
+    BadRequest:
+      description: Bad Request - Invalid input or validation failure
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            validationError:
+              summary: Validation error with multiple fields
+              value:
+                error:
+                  code: INVALID_INPUT
+                  message: Validation failed for ticket creation request
+                  details:
+                    - field: title
+                      message: Title is required and cannot be empty
+                      code: MISSING_REQUIRED_FIELD
+                    - field: priority
+                      message: Priority must be one of Low, Medium, High, Critical
+                      code: INVALID_PRIORITY
+                  timestamp: '2024-01-15T10:30:00Z'
+                  requestId: req_abc123
+            invalidUUID:
+              summary: Invalid UUID format
+              value:
+                error:
+                  code: INVALID_UUID_FORMAT
+                  message: Invalid ticket ID format
+                  timestamp: '2024-01-15T10:30:00Z'
+                  requestId: req_xyz789
+
+    Unauthorized:
+      description: Unauthorized - Missing or invalid authentication token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Missing or invalid authentication token
+              timestamp: '2024-01-15T10:30:00Z'
+              requestId: req_def456
+
+    Forbidden:
+      description: Forbidden - Operation not allowed by business rules
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: CANNOT_MODIFY_TERMINAL
+              message: Cannot assign ticket in terminal state Closed
+              timestamp: '2024-01-15T10:30:00Z'
+              requestId: req_ghi789
+
+    NotFound:
+      description: Not Found - Requested resource does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: TICKET_NOT_FOUND
+              message: Ticket with ID '550e8400-e29b-41d4-a716-446655440000' does not exist
+              timestamp: '2024-01-15T10:30:00Z'
+              requestId: req_jkl012
+
+    UnprocessableEntity:
+      description: Unprocessable Entity - Invalid state transition or business rule violation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalidTransition:
+              summary: Invalid state transition
+              value:
+                error:
+                  code: INVALID_TRANSITION
+                  message: Invalid state transition from Open to Closed. Allowed transitions In_Progress, Cancelled
+                  timestamp: '2024-01-15T10:30:00Z'
+                  requestId: req_mno345
+            terminalState:
+              summary: Terminal state error
+              value:
+                error:
+                  code: TERMINAL_STATE
+                  message: Ticket is in terminal state Closed. No further transitions allowed.
+                  timestamp: '2024-01-15T10:30:00Z'
+                  requestId: req_pqr678
+
+    InternalServerError:
+      description: Internal Server Error - Unexpected system error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred
+              timestamp: '2024-01-15T10:30:00Z'
+              requestId: req_stu901
