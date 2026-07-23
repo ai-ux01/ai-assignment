@@ -146,12 +146,12 @@ npm run test:coverage
 
 ## Development Phases
 
-1. **Phase 1**: Infrastructure setup (Weeks 1-2)
-2. **Phase 2**: Ticket operations (Weeks 3-4)
-3. **Phase 3**: State management (Week 5)
-4. **Phase 4**: Assignment and comments (Week 6)
-5. **Phase 5**: Search and filter (Week 7)
-6. **Phase 6**: Integration and hardening (Week 8)
+1. **Phase 1**: Infrastructure setup 
+2. **Phase 2**: Ticket operations
+3. **Phase 3**: State management 
+4. **Phase 4**: Assignment and comments
+5. **Phase 5**: Search and filter 
+6. **Phase 6**: Integration and hardening 
 
 ## Project Status
 
